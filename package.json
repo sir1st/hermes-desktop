@@ -1,6 +1,6 @@
 {
   "name": "hermes-desktop",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "All-in-one desktop app for Hermes Agent — bundles Python runtime, hermes-agent, and hermes-web-ui",
   "author": {
     "name": "Hermes Desktop Contributors",
@@ -15,7 +15,8 @@
     "build": "npm run build:main && npm run build:webui",
     "fetch:python": "node scripts/fetch-python.mjs",
     "install:hermes": "node scripts/install-hermes.mjs",
-    "prepare:python": "npm run fetch:python && npm run install:hermes",
+    "patch:hermes": "node scripts/apply-hermes-patches.mjs",
+    "prepare:python": "npm run fetch:python && npm run install:hermes && npm run patch:hermes",
     "dev": "npm run build:main && electron .",
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",

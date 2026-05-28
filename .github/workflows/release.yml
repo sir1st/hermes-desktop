@@ -21,7 +21,7 @@ jobs:
             target_arch: arm64
             electron_target: "--mac dmg --arm64"
           - label: macOS x64
-            runner: macos-13
+            runner: macos-15-intel
             target_os: darwin
             target_arch: x64
             electron_target: "--mac dmg --x64"
@@ -79,6 +79,12 @@ jobs:
           TARGET_OS: ${{ matrix.target_os }}
           TARGET_ARCH: ${{ matrix.target_arch }}
         run: node scripts/install-hermes.mjs
+
+      - name: Apply local hermes-agent patches
+        env:
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: node scripts/apply-hermes-patches.mjs
 
       - name: Prune bundled Python
         env:
