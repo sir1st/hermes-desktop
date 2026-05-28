@@ -17,11 +17,12 @@ jobs:
   check-and-sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout with submodules
+      - name: Checkout with submodules (PAT so subsequent push triggers workflows)
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node 22
         uses: actions/setup-node@v4
@@ -68,7 +69,6 @@ jobs:
           NEXT=$(echo "$CUR" | awk -F. '{print $1"."$2"."$3+1}')
           echo "current=$CUR" >> "$GITHUB_OUTPUT"
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
-          echo "Bumping $CUR → $NEXT"
 
       - name: Sanity-check that bundled patches still apply
         if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
@@ -102,8 +102,22 @@ jobs:
           mv package.json.tmp package.json
           npm install --package-lock-only --no-audit --no-fund || true
 
-      - name: Open sync PR + auto-merge
-        if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
+      # Fast path: patches OK → push commit + tag directly to main using PAT.
+      # The PAT-driven push triggers release.yml (tag-trigger).
+      - name: Push to main + tag (fast path, patches OK)
+        if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true' && steps.patch-check.outputs.patches_ok == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          OLD_SHA: ${{ steps.diff.outputs.old_sha }}
+          NEW_SHA: ${{ steps.diff.outputs.new_sha }}
+          COMMIT_COUNT: ${{ steps.diff.outputs.commit_count }}
+          OLD_VER: ${{ steps.version.outputs.current }}
+          NEW_VER: ${{ steps.version.outputs.next }}
+        run: bash .github/scripts/push-to-main.sh
+
+      # Slow path: patches FAILED → open PR with needs-review for human review.
+      - name: Open needs-review PR (slow path, patches broken)
+        if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true' && steps.patch-check.outputs.patches_ok != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OLD_SHA: ${{ steps.diff.outputs.old_sha }}
