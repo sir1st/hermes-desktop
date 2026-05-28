@@ -1,5 +1,7 @@
 # Hermes Desktop
 
+English · [中文](README.zh-CN.md)
+
 All-in-one cross-platform desktop app for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 Bundles a Python runtime + `hermes-agent` + [`hermes-web-ui`](https://github.com/EKKOLearnAI/hermes-web-ui)
 into a single download — users don't need to install Python or Node.
