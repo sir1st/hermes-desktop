@@ -75,22 +75,12 @@ if (src !== before) writeFileSync(SERVER_JS, src)
   if (py.includes(marker)) {
     console.log(`  · worker-tcp-everywhere  (already applied)`)
   } else {
-    const find = `def _worker_endpoint(key: str) -> str:
-    safe = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
-    if os.name == "nt":
-        port_base = int(os.environ.get("HERMES_AGENT_BRIDGE_WORKER_PORT_BASE", "18780"))
-        return f"tcp://127.0.0.1:{port_base + int(safe[:4], 16) % 1000}"
-    root = Path(tempfile.gettempdir()) / "hermes-agent-bridge-workers"
-    return f"ipc://{root / f'{safe}.sock'}"`
-    const replace = `def _worker_endpoint(key: str) -> str:  ${marker}
-    safe = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
-    # Always use TCP loopback for worker endpoints. Unix sockets in /tmp are
-    # rejected by some macOS EDR/sandbox setups when the broker is spawned
-    # from an unsigned Electron child, causing the worker to be SIGKILL'd
-    # before reporting ready. TCP works identically and is safe on all OSes.
-    port_base = int(os.environ.get("HERMES_AGENT_BRIDGE_WORKER_PORT_BASE", "18780"))
-    return f"tcp://127.0.0.1:{port_base + int(safe[:4], 16) % 1000}"`
-    if (!py.includes(find)) {
+    // Match the whole `if os.name == "nt": ... else ipc:// fallback` branch
+    // tolerant of any function signature changes upstream may make. We replace
+    // just the platform branch with a single TCP return.
+    const find = /(\n {4})if os\.name == "nt":\s*\n {8}port_base = int\(os\.environ\.get\("HERMES_AGENT_BRIDGE_WORKER_PORT_BASE", "18780"\)\)\s*\n {8}return f"tcp:\/\/127\.0\.0\.1:\{port_base \+ int\(safe\[:4\], 16\) % 1000\}"\s*\n {4}root = Path\(tempfile\.gettempdir\(\)\) \/ "hermes-agent-bridge-workers"\s*\n {4}return f"ipc:\/\/\{root \/ f'\{safe\}\.sock'\}"/
+    const replace = `$1${marker}\n    # Always use TCP loopback for worker endpoints. Unix sockets in /tmp are\n    # rejected by some macOS EDR/sandbox setups when the broker is spawned\n    # from an unsigned Electron child, causing the worker to be SIGKILL'd\n    # before reporting ready. TCP works identically and is safe on all OSes.\n    port_base = int(os.environ.get("HERMES_AGENT_BRIDGE_WORKER_PORT_BASE", "18780"))\n    return f"tcp://127.0.0.1:{port_base + int(safe[:4], 16) % 1000}"`
+    if (!find.test(py)) {
       console.log(`  ✗ worker-tcp-everywhere  (anchor not found)`)
     } else {
       py = py.replace(find, replace)
