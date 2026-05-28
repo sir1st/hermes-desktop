@@ -1,0 +1,34 @@
+{
+  "name": "hermes-desktop",
+  "version": "0.0.1",
+  "description": "All-in-one desktop app for Hermes Agent — bundles Python runtime, hermes-agent, and hermes-web-ui",
+  "author": "Hermes Desktop Contributors",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.json",
+    "build:webui": "cd vendor/hermes-web-ui && npm ci && npm run build && npm prune --omit=dev",
+    "build": "npm run build:main && npm run build:webui",
+    "fetch:python": "node scripts/fetch-python.mjs",
+    "install:hermes": "node scripts/install-hermes.mjs",
+    "prepare:python": "npm run fetch:python && npm run install:hermes",
+    "rebuild:native": "electron-rebuild -f -w node-pty --module-dir vendor/hermes-web-ui",
+    "dev": "npm run build:main && electron .",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
+    "@types/node": "^24.12.2",
+    "electron": "^42.3.0",
+    "electron-builder": "^25.1.8",
+    "tar": "^7.4.3",
+    "typescript": "~5.6.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  }
+}

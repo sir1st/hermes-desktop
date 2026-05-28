@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS arm64
+            runner: macos-14
+            target_os: darwin
+            target_arch: arm64
+            electron_target: "--mac dmg --arm64"
+          - label: macOS x64
+            runner: macos-13
+            target_os: darwin
+            target_arch: x64
+            electron_target: "--mac dmg --x64"
+          - label: Windows x64
+            runner: windows-latest
+            target_os: win32
+            target_arch: x64
+            electron_target: "--win nsis --x64"
+          - label: Linux x64
+            runner: ubuntu-22.04
+            target_os: linux
+            target_arch: x64
+            electron_target: "--linux AppImage deb --x64"
+          - label: Linux arm64
+            runner: ubuntu-22.04-arm
+            target_os: linux
+            target_arch: arm64
+            electron_target: "--linux AppImage deb --arm64"
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install root deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Build web UI (vendor/hermes-web-ui)
+        run: |
+          cd vendor/hermes-web-ui
+          npm ci --no-audit --no-fund
+          npm run build
+          npm prune --omit=dev
+
+      - name: Fetch bundled Python
+        env:
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: node scripts/fetch-python.mjs
+
+      - name: Install hermes-agent into bundled Python
+        env:
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: node scripts/install-hermes.mjs
+
+      - name: Prune bundled Python
+        env:
+          TARGET_OS: ${{ matrix.target_os }}
+          TARGET_ARCH: ${{ matrix.target_arch }}
+        run: node scripts/prune-python.mjs
+
+      - name: Compile main process
+        run: npm run build:main
+
+      - name: Build & publish (electron-builder)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder ${{ matrix.electron_target }} --publish always
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: |
+            release/*.dmg
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
+          if-no-files-found: ignore

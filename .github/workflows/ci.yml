@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  typecheck:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with: { submodules: recursive }
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm' }
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:main
+      - name: Build web UI (smoke)
+        run: |
+          cd vendor/hermes-web-ui
+          npm ci --no-audit --no-fund
+          npm run build

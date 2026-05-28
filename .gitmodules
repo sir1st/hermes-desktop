@@ -1,0 +1,3 @@
+[submodule "vendor/hermes-web-ui"]
+	path = vendor/hermes-web-ui
+	url = https://github.com/EKKOLearnAI/hermes-web-ui.git
