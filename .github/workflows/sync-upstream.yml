@@ -2,8 +2,6 @@ name: Sync upstream submodules
 
 on:
   schedule:
-    # Every 5 minutes. GitHub fires actual runs roughly on time during low load
-    # but may delay to ~15 min at peak. workflow_dispatch covers urgent syncs.
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
@@ -12,25 +10,23 @@ permissions:
   pull-requests: write
 
 concurrency:
-  # Don't pile up sync jobs if upstream pushes faster than we build.
   group: sync-upstream
   cancel-in-progress: false
 
 jobs:
   check-and-sync:
     runs-on: ubuntu-latest
-    outputs:
-      changed: ${{ steps.diff.outputs.changed }}
-      new_sha: ${{ steps.diff.outputs.new_sha }}
-      old_sha: ${{ steps.diff.outputs.old_sha }}
-      commit_count: ${{ steps.diff.outputs.commit_count }}
-
     steps:
       - name: Checkout with submodules
         uses: actions/checkout@v4
         with:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
 
       - name: Detect upstream changes
         id: diff
@@ -45,8 +41,7 @@ jobs:
             exit 0
           fi
           COUNT=$(git rev-list --count "$OLD..$NEW")
-          echo "↑ Upstream advanced by $COUNT commits"
-          echo "  $OLD → $NEW"
+          echo "↑ Upstream advanced by $COUNT commits ($OLD → $NEW)"
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "old_sha=$OLD" >> "$GITHUB_OUTPUT"
           echo "new_sha=$NEW" >> "$GITHUB_OUTPUT"
@@ -58,10 +53,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          OPEN=$(gh pr list --repo "$GITHUB_REPOSITORY" \
-            --label "auto-sync" --state open --json number --jq 'length')
+          OPEN=$(gh pr list --repo "$GITHUB_REPOSITORY" --label "auto-sync" --state open --json number --jq 'length')
           if [ "$OPEN" -gt 0 ]; then
-            echo "⏸ A sync PR is already open. Will retry next cycle."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -72,7 +65,6 @@ jobs:
         id: version
         run: |
           CUR=$(jq -r .version package.json)
-          # Bump patch
           NEXT=$(echo "$CUR" | awk -F. '{print $1"."$2"."$3+1}')
           echo "current=$CUR" >> "$GITHUB_OUTPUT"
           echo "next=$NEXT" >> "$GITHUB_OUTPUT"
@@ -83,6 +75,7 @@ jobs:
         id: patch-check
         continue-on-error: true
         run: |
+          set -e
           cd vendor/hermes-web-ui
           git checkout "${{ steps.diff.outputs.new_sha }}"
           npm ci --no-audit --no-fund
@@ -92,79 +85,31 @@ jobs:
           if node scripts/apply-webui-patches.mjs 2>&1 | tee /tmp/patch.log; then
             if grep -q "anchor not found" /tmp/patch.log; then
               echo "patches_ok=false" >> "$GITHUB_OUTPUT"
-              echo "::warning::Some webui patches lost their anchors — manual review needed"
             else
               echo "patches_ok=true" >> "$GITHUB_OUTPUT"
             fi
           else
             echo "patches_ok=false" >> "$GITHUB_OUTPUT"
           fi
-          # Reset working tree changes (we don't commit web-ui dist)
           cd vendor/hermes-web-ui
           git reset --hard "${{ steps.diff.outputs.new_sha }}"
 
-      - name: Update submodule pointer + version
+      - name: Update submodule pointer + version + lockfile
         if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
         run: |
-          # Move submodule pointer
           git -C vendor/hermes-web-ui checkout "${{ steps.diff.outputs.new_sha }}"
-          # Bump package.json version
-          jq --arg v "${{ steps.version.outputs.next }}" '.version = $v' \
-            package.json > package.json.tmp
+          jq --arg v "${{ steps.version.outputs.next }}" '.version = $v' package.json > package.json.tmp
           mv package.json.tmp package.json
-          # Sync lockfile silently
           npm install --package-lock-only --no-audit --no-fund || true
 
-      - name: Open sync PR
+      - name: Open sync PR + auto-merge
         if: steps.diff.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BRANCH="auto-sync/web-ui-${{ steps.diff.outputs.new_sha }}"
-          git config user.name "hermes-desktop-bot"
-          git config user.email "hermes-desktop-bot@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add -A
-          git commit -m "chore(deps): bump hermes-web-ui to ${{ steps.diff.outputs.new_sha }}
-
-Bump submodule pointer + package.json version (${{ steps.version.outputs.current }} → ${{ steps.version.outputs.next }}).
-
-Patches sanity-check: ${{ steps.patch-check.outputs.patches_ok || 'unknown' }}"
-          git push origin "$BRANCH"
-
-          # Build PR body
-          cat > /tmp/pr-body.md <<EOF
-          Auto-generated by \`.github/workflows/sync-upstream.yml\`.
-
-          - hermes-web-ui: \`${{ steps.diff.outputs.old_sha }}\` → \`${{ steps.diff.outputs.new_sha }}\` (${{ steps.diff.outputs.commit_count }} commits)
-          - package.json: \`${{ steps.version.outputs.current }}\` → \`${{ steps.version.outputs.next }}\`
-          - Patch sanity check: **${{ steps.patch-check.outputs.patches_ok || 'unknown' }}**
-
-          ### Upstream commits
-
-          [Compare on GitHub](https://github.com/EKKOLearnAI/hermes-web-ui/compare/${{ steps.diff.outputs.old_sha }}...${{ steps.diff.outputs.new_sha }})
-
-          ### Auto-merge policy
-
-          - 🟢 If patch sanity check passed AND CI is green → \`gh pr merge --auto --squash\` will merge this once CI completes.
-          - 🟡 If patch sanity check failed → label \`needs-review\` is added, auto-merge disabled, owner is notified.
-          - 🔴 If CI fails → PR sits open, GitHub sends failure email.
-          EOF
-
-          PR_NUM=$(gh pr create \
-            --repo "$GITHUB_REPOSITORY" \
-            --base main \
-            --head "$BRANCH" \
-            --title "chore(deps): bump hermes-web-ui ${{ steps.diff.outputs.commit_count }} commits forward" \
-            --body-file /tmp/pr-body.md \
-            --label "auto-sync" \
-            | sed -E 's@.*/pull/([0-9]+).*@\1@')
-          echo "PR=$PR_NUM"
-
-          if [ "${{ steps.patch-check.outputs.patches_ok }}" = "true" ]; then
-            gh pr merge --auto --squash "$PR_NUM" --repo "$GITHUB_REPOSITORY"
-            echo "✓ Auto-merge enabled on PR #$PR_NUM (will merge when CI is green)"
-          else
-            gh pr edit "$PR_NUM" --repo "$GITHUB_REPOSITORY" --add-label "needs-review"
-            echo "⚠ PR #$PR_NUM needs manual review (patch anchors broken)"
-          fi
+          OLD_SHA: ${{ steps.diff.outputs.old_sha }}
+          NEW_SHA: ${{ steps.diff.outputs.new_sha }}
+          COMMIT_COUNT: ${{ steps.diff.outputs.commit_count }}
+          OLD_VER: ${{ steps.version.outputs.current }}
+          NEW_VER: ${{ steps.version.outputs.next }}
+          PATCHES_OK: ${{ steps.patch-check.outputs.patches_ok }}
+        run: bash .github/scripts/open-sync-pr.sh
