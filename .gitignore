@@ -9,3 +9,4 @@ resources/python/
 .env.local
 .vscode/
 .idea/
+.claude/
