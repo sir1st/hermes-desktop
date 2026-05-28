@@ -1,6 +1,6 @@
 {
   "name": "hermes-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "All-in-one desktop app for Hermes Agent — bundles Python runtime, hermes-agent, and hermes-web-ui",
   "author": {
     "name": "Hermes Desktop Contributors",

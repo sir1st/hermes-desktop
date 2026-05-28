@@ -61,26 +61,29 @@ if (!existsSync(hermesBin)) {
 
 // hermes-web-ui's agent-bridge searches for `run_agent.py` at <python_root>/run_agent.py
 // (and a few neighbouring dirs). pip places it at site-packages/run_agent.py — surface
-// it at the venv root so the bridge resolveAgentRoot() lookup hits.
+// it at the venv root with a *relative* symlink so the venv stays portable when copied
+// into the packaged .app/.exe (an absolute symlink would break the moment the bundle
+// is moved to /Applications/...).
 const { readdirSync, symlinkSync, copyFileSync, unlinkSync, lstatSync } = await import('node:fs')
-function siteRunAgent() {
+function siteRunAgentRelative() {
   if (TARGET_OS === 'win32') {
-    return resolve(PY_DIR, 'Lib', 'site-packages', 'run_agent.py')
+    return ['Lib', 'site-packages', 'run_agent.py'].join('\\')
   }
   const libDir = resolve(PY_DIR, 'lib')
   const py = readdirSync(libDir).find(n => /^python\d+\.\d+$/.test(n))
-  return resolve(libDir, py, 'site-packages', 'run_agent.py')
+  return ['lib', py, 'site-packages', 'run_agent.py'].join('/')
 }
 {
-  const src = siteRunAgent()
+  const relSrc = siteRunAgentRelative()
+  const absSrc = resolve(PY_DIR, relSrc)
   const dst = resolve(PY_DIR, 'run_agent.py')
-  if (existsSync(src)) {
+  if (existsSync(absSrc)) {
     try { lstatSync(dst); unlinkSync(dst) } catch {}
-    if (TARGET_OS === 'win32') copyFileSync(src, dst)
-    else symlinkSync(src, dst)
-    console.log(`✓ run_agent.py linked at venv root (for agent-bridge resolution)`)
+    if (TARGET_OS === 'win32') copyFileSync(absSrc, dst)
+    else symlinkSync(relSrc, dst)
+    console.log(`✓ run_agent.py linked at venv root (relative → ${relSrc})`)
   } else {
-    console.warn(`! run_agent.py not found at ${src} — agent-bridge may fail`)
+    console.warn(`! run_agent.py not found at ${absSrc} — agent-bridge may fail`)
   }
 }
 
