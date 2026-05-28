@@ -8,6 +8,11 @@ into a single download — users don't need to install Python or Node.
 
 ![Hermes Desktop chat](docs/screenshot-chat.png)
 
+<p align="center">
+  <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="Hermes Desktop demo" width="720" /></a><br/>
+  <em>Hermes Desktop ↔ DingTalk via DeepSeek (50s)</em>
+</p>
+
 ## Acknowledgements
 
 This project would not exist without two upstream projects, and the

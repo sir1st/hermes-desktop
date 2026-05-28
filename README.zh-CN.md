@@ -8,6 +8,11 @@
 
 ![Hermes Desktop chat](docs/screenshot-chat.png)
 
+<p align="center">
+  <a href="docs/demo.mp4"><img src="docs/demo.gif" alt="Hermes Desktop 演示" width="720" /></a><br/>
+  <em>Hermes Desktop ↔ 钉钉 ↔ DeepSeek 实录(50 秒)</em>
+</p>
+
 ## 致谢
 
 如果没有下面这两个上游项目,Hermes Desktop 根本不可能存在。这个仓库本身只是一个
