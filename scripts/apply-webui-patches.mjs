@@ -56,6 +56,22 @@ patch(
   'requiresCredentialChange:!1',
 )
 
+// Provider OAuth (Codex/xAI/Nous) login fails on Windows with
+// `ENOENT: no such file or directory, mkdir ''`. The auth controllers derive
+// the credential dir via `authPath.substring(0, authPath.lastIndexOf('/'))`;
+// on Windows (backslash paths) lastIndexOf('/') is -1 → empty string → mkdir ''.
+// Replace with a separator-agnostic parent-dir computation. There are several
+// call sites (codex saveAuthJson + codex CLI tokens, xai, nous), all matched by
+// the backreferenced regex below.
+// Upstreamed in EKKOLearnAI/hermes-web-ui#1148 — drop this patch once the
+// vendored submodule includes it.
+patch(
+  'webui-auth-dir-windows-path',
+  /Math\.max\([A-Za-z0-9_$]+\.lastIndexOf\("\/"\),[A-Za-z0-9_$]+\.lastIndexOf\("\\\\"\)\)/,
+  /([A-Za-z0-9_$]+)\.substring\(0,\1\.lastIndexOf\("\/"\)\)/g,
+  '$1.substring(0,Math.max($1.lastIndexOf("/"),$1.lastIndexOf("\\\\")))',
+)
+
 if (src !== before) writeFileSync(SERVER_JS, src)
 
 // NOTE: a previous `worker-tcp-everywhere` patch on hermes_bridge.py was
